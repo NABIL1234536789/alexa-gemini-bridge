@@ -2,7 +2,10 @@ const express = require('express');
 const Alexa = require('ask-sdk-core');
 
 const app = express();
+
+// إعداد قراءة بيانات JSON و Raw Body القادمة من أليكسا
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // 1. معالج التشغيل المباشر عند قول "افتحي جيميناي"
 const LaunchRequestHandler = {
@@ -37,10 +40,10 @@ const AskGeminiIntentHandler = {
         try {
             const apiKey = process.env.GEMINI_API_KEY;
             if (!apiKey) {
-                throw new Error('GEMINI_API_KEY is not set');
+                throw new Error('GEMINI_API_KEY environment variable is not set');
             }
 
-            // طلب API المباشر لـ Gemini 1.5 Flash
+            // طلب API مباشر لنظام Gemini 1.5 Flash
             const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: {
@@ -57,7 +60,7 @@ const AskGeminiIntentHandler = {
 
             if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0]) {
                 speakOutput = data.candidates[0].content.parts[0].text;
-                // إزالة أي رموز أو تنسيقات Markdown لتتمكن أليكسا من قراءتها بوضوح
+                // تنظيف النص من علامات التنسيق (Markdown) لتتمكن أليكسا من قراءته بسلاسة
                 speakOutput = speakOutput.replace(/[*_#`~]/g, '');
             } else {
                 speakOutput = 'عذراً، لم أتمكن من الحصول على إجابة من جيميناي حالياً.';
@@ -118,7 +121,7 @@ const ErrorHandler = {
     }
 };
 
-// بناء الـ Alexa Skill
+// بناء الـ Skill
 const skill = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
@@ -129,8 +132,13 @@ const skill = Alexa.SkillBuilders.custom()
     .addErrorHandlers(ErrorHandler)
     .create();
 
-// استقبال طلبات أليكسا من خلال Express
+// المسار الرئيسي لاستقبال طلبات أليكسا مع التحقق من صحة الطلب
 app.post('/alexa', (req, res) => {
+    if (!req.body || Object.keys(req.body).length === 0) {
+        console.error('Empty request body received');
+        return res.status(400).send('Bad Request: Empty Body');
+    }
+
     skill.invoke(req.body)
         .then(responseBody => {
             res.json(responseBody);
@@ -141,7 +149,6 @@ app.post('/alexa', (req, res) => {
         });
 });
 
-// تشغيل الخادم
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
