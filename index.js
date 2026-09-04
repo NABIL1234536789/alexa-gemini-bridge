@@ -6,7 +6,7 @@ const https = require('https');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Handlers
+// 1. Handlers
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
@@ -89,11 +89,12 @@ const ErrorHandler = {
     }
 };
 
-// Gemini API Function
+// 2. Gemini API Call
 function callGeminiApi(prompt, apiKey) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify({
             contents: [{
+                role: "user",
                 parts: [{ text: prompt }]
             }]
         });
@@ -133,7 +134,7 @@ function callGeminiApi(prompt, apiKey) {
     });
 }
 
-// Alexa Skill Setup
+// 3. Alexa Skill Setup with Disabled Verification for Testing
 const skillBuilder = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
@@ -144,10 +145,18 @@ const skillBuilder = Alexa.SkillBuilders.custom()
     .addErrorHandlers(ErrorHandler);
 
 const skill = skillBuilder.create();
+// تعطيل التحقق من التوقيع مؤقتاً لتجنب أخطاء SSL/Verification في البيئة المجانية
 const adapter = new ExpressAdapter(skill, false, false);
 
 app.post('/', adapter.getRequestHandlers());
 
+// إضافة مسار اختبار للـ GET لتأكيد عمل الخادم
+app.get('/', (req, res) => {
+    res.send('Alexa Gemini Bridge is Running!');
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
+
+
