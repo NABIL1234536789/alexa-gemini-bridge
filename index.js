@@ -6,7 +6,7 @@ const https = require('https');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// 1. Handlers
+// Handlers
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
@@ -75,15 +75,27 @@ const CancelAndStopIntentHandler = {
             .speak('مع السلامة!')
             .getResponse();
     }
+};
+
+const ErrorHandler = {
+    canHandle() {
+        return true;
+    },
+    handle(handlerInput, error) {
+        console.error(`Error handled: ${error.message}`);
+        return handlerInput.responseBuilder
+            .speak('عذراً، حدث خطأ أثناء معالجة الطلب.')
+            .getResponse();
+    }
+};
+
+// Gemini API Function
 function callGeminiApi(prompt, apiKey) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify({
-            contents: [
-                {
-                    role: "user",
-                    parts: [{ text: prompt }]
-                }
-            ]
+            contents: [{
+                parts: [{ text: prompt }]
+            }]
         });
 
         const options = {
@@ -104,14 +116,10 @@ function callGeminiApi(prompt, apiKey) {
                     const json = JSON.parse(body);
                     if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts[0].text) {
                         let text = json.candidates[0].content.parts[0].text;
-                        // تنظيف النص من علامات التنسيق الماركدون
                         text = text.replace(/[*_#`~]/g, '').trim();
                         resolve(text);
-                    } else if (json.error) {
-                        console.error("Gemini API Error Response:", json.error);
-                        reject(new Error(json.error.message));
                     } else {
-                        reject(new Error('Invalid response structure from Gemini API'));
+                        reject(new Error('Invalid response structure'));
                     }
                 } catch (e) {
                     reject(e);
@@ -124,3 +132,22 @@ function callGeminiApi(prompt, apiKey) {
         req.end();
     });
 }
+
+// Alexa Skill Setup
+const skillBuilder = Alexa.SkillBuilders.custom()
+    .addRequestHandlers(
+        LaunchRequestHandler,
+        GeminiQueryIntentHandler,
+        HelpIntentHandler,
+        CancelAndStopIntentHandler
+    )
+    .addErrorHandlers(ErrorHandler);
+
+const skill = skillBuilder.create();
+const adapter = new ExpressAdapter(skill, false, false);
+
+app.post('/', adapter.getRequestHandlers());
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
