@@ -1,9 +1,9 @@
 const express = require('express');
 const Alexa = require('ask-sdk-core');
-const { ExpressAdapter } = require('ask-sdk-express-adapter');
 const https = require('https');
 
 const app = express();
+app.use(express.json());
 
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
@@ -29,7 +29,7 @@ const AskGeminiIntentHandler = {
 
         if (!apiKey) {
             return handlerInput.responseBuilder
-                .speak('مرحباً! السيرفر يعمل بنجاح، ولكن يرجى إضافة مفتاح GEMINI_API_KEY في إعدادات Render لتفعيل إجابات جيميناي.')
+                .speak('السيرفر يعمل بنجاح، ولكن يرجى إضافة مفتاح GEMINI_API_KEY في إعدادات Render.')
                 .getResponse();
         }
 
@@ -41,7 +41,7 @@ const AskGeminiIntentHandler = {
         } catch (error) {
             console.error('Gemini Error:', error);
             return handlerInput.responseBuilder
-                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى التأكد من صحة المفتاح.')
+                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى المحاولة لاحقاً.')
                 .getResponse();
         }
     }
@@ -107,7 +107,7 @@ function callGemini(prompt, apiKey) {
             res.on('end', () => {
                 try {
                     const response = JSON.parse(body);
-                    if (response.candidates && response.candidates[0].content.parts[0].text) {
+                    if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
                         resolve(response.candidates[0].content.parts[0].text);
                     } else {
                         resolve('لم أتمكن من الحصول على إجابة من جيميناي.');
@@ -134,10 +134,16 @@ const skill = Alexa.SkillBuilders.custom()
     .addErrorHandlers(ErrorHandler)
     .create();
 
-const adapter = new ExpressAdapter(skill, true, true);
-
-app.use(express.json());
-app.post('/alexa', adapter.getRequestHandler());
+app.post('/alexa', (req, res) => {
+    skill.invoke(req.body)
+        .then(responseBody => {
+            res.json(responseBody);
+        })
+        .catch(error => {
+            console.error(error);
+            res.status(500).send('Error processing request');
+        });
+});
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
