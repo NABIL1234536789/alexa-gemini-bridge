@@ -1,12 +1,14 @@
 {
   "name": "alexa-gemini-bridge",
   "version": "1.0.0",
+  "description": "Alexa Skill Bridge for Gemini API",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "ask-sdk-core": "^2.14.0",
+    "ask-sdk-express-adapter": "^2.14.0",
+    "express": "^4.18.2"
   }
 }
