@@ -1,18 +1,16 @@
 const express = require('express');
-const { ExpressAdapter } = require('ask-sdk-express-adapter');
 const Alexa = require('ask-sdk-core');
+const { ExpressAdapter } = require('ask-sdk-express-adapter');
 const https = require('https');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
 
-// 1. Handlers
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
     },
     handle(handlerInput) {
-        const speakOutput = 'مرحباً بك، أنا جيميناي. كيف يمكنني مساعدتك اليوم؟';
+        const speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
         return handlerInput.responseBuilder
             .speak(speakOutput)
             .reprompt(speakOutput)
@@ -20,30 +18,28 @@ const LaunchRequestHandler = {
     }
 };
 
-const GeminiQueryIntentHandler = {
+const AskGeminiIntentHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'GeminiQueryIntent';
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AskGeminiIntent';
     },
     async handle(handlerInput) {
-        const prompt = Alexa.getSlotValue(handlerInput.requestEnvelope, 'prompt');
+        const query = Alexa.getSlotValue(handlerInput.requestEnvelope, 'query');
         const apiKey = process.env.GEMINI_API_KEY;
 
-        if (!prompt) {
+        if (!apiKey) {
             return handlerInput.responseBuilder
-                .speak('لم أتمكن من سماع سؤالك بوضوح.')
-                .reprompt('تفضل بسؤالك')
+                .speak('لم يتم ضبط مفتاح جيميناي في السيرفر بعد.')
                 .getResponse();
         }
 
         try {
-            const reply = await callGeminiApi(prompt, apiKey);
+            const reply = await callGemini(query, apiKey);
             return handlerInput.responseBuilder
                 .speak(reply)
-                .reprompt('هل لديك سؤال آخر؟')
                 .getResponse();
         } catch (error) {
-            console.error('Gemini API Error:', error);
+            console.error('Gemini Error:', error);
             return handlerInput.responseBuilder
                 .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى المحاولة لاحقاً.')
                 .getResponse();
@@ -58,8 +54,8 @@ const HelpIntentHandler = {
     },
     handle(handlerInput) {
         return handlerInput.responseBuilder
-            .speak('يمكنك سؤالي أي سؤال وسأجيبك باستخدام جيميناي.')
-            .reprompt('تفضل بسؤالك')
+            .speak('يمكنك إلقاء أي سؤال علي وسأجيبك باستخدام ذكاء جيميناي.')
+            .reprompt('ما هو سؤالك؟')
             .getResponse();
     }
 };
@@ -82,21 +78,17 @@ const ErrorHandler = {
         return true;
     },
     handle(handlerInput, error) {
-        console.error(`Error handled: ${error.message}`);
+        console.log(`Error handled: ${error.message}`);
         return handlerInput.responseBuilder
-            .speak('عذراً، حدث خطأ أثناء معالجة الطلب.')
+            .speak('عذراً، حدث خطأ في معالجة طلبك.')
             .getResponse();
     }
 };
 
-// 2. Gemini API Call
-function callGeminiApi(prompt, apiKey) {
+function callGemini(prompt, apiKey) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify({
-            contents: [{
-                role: "user",
-                parts: [{ text: prompt }]
-            }]
+            contents: [{ parts: [{ text: prompt }] }]
         });
 
         const options = {
@@ -114,14 +106,9 @@ function callGeminiApi(prompt, apiKey) {
             res.on('data', (chunk) => body += chunk);
             res.on('end', () => {
                 try {
-                    const json = JSON.parse(body);
-                    if (json.candidates && json.candidates[0].content && json.candidates[0].content.parts[0].text) {
-                        let text = json.candidates[0].content.parts[0].text;
-                        text = text.replace(/[*_#`~]/g, '').trim();
-                        resolve(text);
-                    } else {
-                        reject(new Error('Invalid response structure'));
-                    }
+                    const response = JSON.parse(body);
+                    const text = response.candidates[0].content.parts[0].text;
+                    resolve(text);
                 } catch (e) {
                     reject(e);
                 }
@@ -134,29 +121,21 @@ function callGeminiApi(prompt, apiKey) {
     });
 }
 
-// 3. Alexa Skill Setup with Disabled Verification for Testing
-const skillBuilder = Alexa.SkillBuilders.custom()
+const skill = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
-        GeminiQueryIntentHandler,
+        AskGeminiIntentHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler
     )
-    .addErrorHandlers(ErrorHandler);
+    .addErrorHandlers(ErrorHandler)
+    .create();
 
-const skill = skillBuilder.create();
-// تعطيل التحقق من التوقيع مؤقتاً لتجنب أخطاء SSL/Verification في البيئة المجانية
-const adapter = new ExpressAdapter(skill, false, false);
+const adapter = new ExpressAdapter(skill, true, true);
 
-app.post('/', adapter.getRequestHandlers());
+app.post('/alexa', adapter.getImageHandler());
 
-// إضافة مسار اختبار للـ GET لتأكيد عمل الخادم
-app.get('/', (req, res) => {
-    res.send('Alexa Gemini Bridge is Running!');
-});
-
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
-
-
