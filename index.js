@@ -133,7 +133,7 @@ const skill = Alexa.SkillBuilders.custom()
 
 const adapter = new ExpressAdapter(skill, true, true);
 
-app.post('/alexa', adapter.getImageHandler());
+app.post('/alexa', adapter.getRequestHandler());
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
