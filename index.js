@@ -1,6 +1,12 @@
+const express = require('express');
+const { ExpressAdapter } = require('ask-sdk-express-adapter');
 const Alexa = require('ask-sdk-core');
 const https = require('https');
 
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+// 1. Handlers
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
@@ -25,7 +31,7 @@ const GeminiQueryIntentHandler = {
 
         if (!prompt) {
             return handlerInput.responseBuilder
-                .speak('لم أتمكن من سماع سؤالك بوضوح، يرجى المحاولة مرة أخرى.')
+                .speak('لم أتمكن من سماع سؤالك بوضوح.')
                 .reprompt('تفضل بسؤالك')
                 .getResponse();
         }
@@ -39,7 +45,7 @@ const GeminiQueryIntentHandler = {
         } catch (error) {
             console.error('Gemini API Error:', error);
             return handlerInput.responseBuilder
-                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى التأكد من مفتاح API والمحاولة لاحقاً.')
+                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى المحاولة لاحقاً.')
                 .getResponse();
         }
     }
@@ -51,10 +57,9 @@ const HelpIntentHandler = {
             && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.HelpIntent';
     },
     handle(handlerInput) {
-        const speakOutput = 'يمكنك سؤالي أي سؤال وسأقوم بإرساله إلى جيميناي للإجابة عليه.';
         return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
+            .speak('يمكنك سؤالي أي سؤال وسأجيبك باستخدام جيميناي.')
+            .reprompt('تفضل بسؤالك')
             .getResponse();
     }
 };
@@ -66,9 +71,8 @@ const CancelAndStopIntentHandler = {
                 || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StopIntent');
     },
     handle(handlerInput) {
-        const speakOutput = 'مع السلامة!';
         return handlerInput.responseBuilder
-            .speak(speakOutput)
+            .speak('مع السلامة!')
             .getResponse();
     }
 };
@@ -79,13 +83,13 @@ const ErrorHandler = {
     },
     handle(handlerInput, error) {
         console.error(`Error handled: ${error.message}`);
-        const speakOutput = 'عذراً، حدث خطأ في النظام الداخلي للمهارة.';
         return handlerInput.responseBuilder
-            .speak(speakOutput)
+            .speak('عذراً، حدث خطأ أثناء معالجة الطلب.')
             .getResponse();
     }
 };
 
+// 2. Gemini API Function
 function callGeminiApi(prompt, apiKey) {
     return new Promise((resolve, reject) => {
         const data = JSON.stringify({
@@ -112,11 +116,10 @@ function callGeminiApi(prompt, apiKey) {
                     const json = JSON.parse(body);
                     if (json.candidates && json.candidates[0].content.parts[0].text) {
                         const text = json.candidates[0].content.parts[0].text;
-                        // تنظيف النص من علامات Markdown لتتمكن أليكسا من قراءته بسلاسة
                         const cleanText = text.replace(/[*_#`~]/g, '');
                         resolve(cleanText);
                     } else {
-                        reject('Invalid response structure');
+                        reject(new Error('Invalid response structure'));
                     }
                 } catch (e) {
                     reject(e);
@@ -130,12 +133,21 @@ function callGeminiApi(prompt, apiKey) {
     });
 }
 
-exports.handler = Alexa.SkillBuilders.custom()
+// 3. Alexa Skill Instance & Express Adapter
+const skillBuilder = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
         GeminiQueryIntentHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler
     )
-    .addErrorHandlers(ErrorHandler)
-    .lambda();
+    .addErrorHandlers(ErrorHandler);
+
+const skill = skillBuilder.create();
+const adapter = new ExpressAdapter(skill, false, false);
+
+app.post('/', adapter.getRequestHandlers());
+
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
