@@ -1,54 +1,102 @@
-import express from 'express';
-import https from 'https';
+const Alexa = require('ask-sdk-core');
+const https = require('https');
 
-const app = express();
-app.use(express.json());
-
-// ضع مفتاح Gemini API هنا
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-app.post('/', async (req, res) => {
-    const event = req.body;
-    const requestType = event.request?.type;
-
-    if (requestType === 'LaunchRequest') {
-        return res.json(buildResponse("مرحباً بك، أنا جيميناي. كيف يمكنني مساعدتك اليوم؟", false));
+const LaunchRequestHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
+    },
+    handle(handlerInput) {
+        const speakOutput = 'مرحباً بك، أنا جيميناي. كيف يمكنني مساعدتك اليوم؟';
+        return handlerInput.responseBuilder
+            .speak(speakOutput)
+            .reprompt(speakOutput)
+            .getResponse();
     }
+};
 
-    if (requestType === 'IntentRequest') {
-        const intentName = event.request.intent.name;
+const GeminiQueryIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'GeminiQueryIntent';
+    },
+    async handle(handlerInput) {
+        const prompt = Alexa.getSlotValue(handlerInput.requestEnvelope, 'prompt');
+        const apiKey = process.env.GEMINI_API_KEY;
 
-        if (intentName === 'GeminiQueryIntent') {
-            const userPrompt = event.request.intent.slots.prompt.value;
-            
-            let sessionAttributes = event.session.attributes || {};
-            let history = sessionAttributes.history || [];
-
-            history.push({ role: "user", parts: [{ text: userPrompt }] });
-
-            const geminiReply = await callGeminiAPI(history);
-
-            history.push({ role: "model", parts: [{ text: geminiReply }] });
-            sessionAttributes.history = history;
-
-            return res.json(buildResponse(geminiReply, false, sessionAttributes));
+        if (!prompt) {
+            return handlerInput.responseBuilder
+                .speak('لم أتمكن من سماع سؤالك بوضوح، يرجى المحاولة مرة أخرى.')
+                .reprompt('تفضل بسؤالك')
+                .getResponse();
         }
 
-        if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
-            return res.json(buildResponse("مع السلامة!", true));
+        try {
+            const reply = await callGeminiApi(prompt, apiKey);
+            return handlerInput.responseBuilder
+                .speak(reply)
+                .reprompt('هل لديك سؤال آخر؟')
+                .getResponse();
+        } catch (error) {
+            console.error('Gemini API Error:', error);
+            return handlerInput.responseBuilder
+                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى التأكد من مفتاح API والمحاولة لاحقاً.')
+                .getResponse();
         }
     }
+};
 
-    return res.json(buildResponse("عذراً، لم أفهم ذلك. هل يمكنك التكرار؟", false));
-});
+const HelpIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.HelpIntent';
+    },
+    handle(handlerInput) {
+        const speakOutput = 'يمكنك سؤالي أي سؤال وسأقوم بإرساله إلى جيميناي للإجابة عليه.';
+        return handlerInput.responseBuilder
+            .speak(speakOutput)
+            .reprompt(speakOutput)
+            .getResponse();
+    }
+};
 
-async function callGeminiAPI(contents) {
-    return new Promise((resolve) => {
-        const data = JSON.stringify({ contents });
+const CancelAndStopIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && (Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.CancelIntent'
+                || Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.StopIntent');
+    },
+    handle(handlerInput) {
+        const speakOutput = 'مع السلامة!';
+        return handlerInput.responseBuilder
+            .speak(speakOutput)
+            .getResponse();
+    }
+};
+
+const ErrorHandler = {
+    canHandle() {
+        return true;
+    },
+    handle(handlerInput, error) {
+        console.error(`Error handled: ${error.message}`);
+        const speakOutput = 'عذراً، حدث خطأ في النظام الداخلي للمهارة.';
+        return handlerInput.responseBuilder
+            .speak(speakOutput)
+            .getResponse();
+    }
+};
+
+function callGeminiApi(prompt, apiKey) {
+    return new Promise((resolve, reject) => {
+        const data = JSON.stringify({
+            contents: [{
+                parts: [{ text: prompt }]
+            }]
+        });
 
         const options = {
             hostname: 'generativelanguage.googleapis.com',
-            path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+            path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -56,42 +104,38 @@ async function callGeminiAPI(contents) {
             }
         };
 
-        const req = https.request(options, (response) => {
+        const req = https.request(options, (res) => {
             let body = '';
-            response.on('data', (chunk) => body += chunk);
-            response.on('end', () => {
+            res.on('data', (chunk) => body += chunk);
+            res.on('end', () => {
                 try {
-                    const parsed = JSON.parse(body);
-                    const text = parsed.candidates[0].content.parts[0].text;
-                    const cleanText = text.replace(/[\*#_]/g, '');
-                    resolve(cleanText);
+                    const json = JSON.parse(body);
+                    if (json.candidates && json.candidates[0].content.parts[0].text) {
+                        const text = json.candidates[0].content.parts[0].text;
+                        // تنظيف النص من علامات Markdown لتتمكن أليكسا من قراءته بسلاسة
+                        const cleanText = text.replace(/[*_#`~]/g, '');
+                        resolve(cleanText);
+                    } else {
+                        reject('Invalid response structure');
+                    }
                 } catch (e) {
-                    resolve("حدث خطأ أثناء معالجة الإجابة من جيميناي.");
+                    reject(e);
                 }
             });
         });
 
-        req.on('error', () => resolve("تعذر الاتصال بـ جيميناي."));
+        req.on('error', (e) => reject(e));
         req.write(data);
         req.end();
     });
 }
 
-function buildResponse(speechText, shouldEndSession, sessionAttributes = {}) {
-    return {
-        version: "1.0",
-        sessionAttributes: sessionAttributes,
-        response: {
-            outputSpeech: {
-                type: "PlainText",
-                text: speechText
-            },
-            shouldEndSession: shouldEndSession
-        }
-    };
-}
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+exports.handler = Alexa.SkillBuilders.custom()
+    .addRequestHandlers(
+        LaunchRequestHandler,
+        GeminiQueryIntentHandler,
+        HelpIntentHandler,
+        CancelAndStopIntentHandler
+    )
+    .addErrorHandlers(ErrorHandler)
+    .lambda();
