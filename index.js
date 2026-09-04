@@ -24,12 +24,12 @@ const AskGeminiIntentHandler = {
             && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AskGeminiIntent';
     },
     async handle(handlerInput) {
-        const query = Alexa.getSlotValue(handlerInput.requestEnvelope, 'query');
+        const query = Alexa.getSlotValue(handlerInput.requestEnvelope, 'query') || 'مرحباً';
         const apiKey = process.env.GEMINI_API_KEY;
 
         if (!apiKey) {
             return handlerInput.responseBuilder
-                .speak('لم يتم ضبط مفتاح جيميناي في السيرفر بعد.')
+                .speak('مرحباً! السيرفر يعمل بنجاح، ولكن يرجى إضافة مفتاح GEMINI_API_KEY في إعدادات Render لتفعيل إجابات جيميناي.')
                 .getResponse();
         }
 
@@ -41,7 +41,7 @@ const AskGeminiIntentHandler = {
         } catch (error) {
             console.error('Gemini Error:', error);
             return handlerInput.responseBuilder
-                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى المحاولة لاحقاً.')
+                .speak('حدث خطأ أثناء الاتصال بجيميناي، يرجى التأكد من صحة المفتاح.')
                 .getResponse();
         }
     }
@@ -54,7 +54,7 @@ const HelpIntentHandler = {
     },
     handle(handlerInput) {
         return handlerInput.responseBuilder
-            .speak('يمكنك إلقاء أي سؤال علي وسأجيبك باستخدام ذكاء جيميناي.')
+            .speak('يمكنك طرح أي سؤال وسأجيبك باستخدام ذكاء جيميناي.')
             .reprompt('ما هو سؤالك؟')
             .getResponse();
     }
@@ -80,7 +80,7 @@ const ErrorHandler = {
     handle(handlerInput, error) {
         console.log(`Error handled: ${error.message}`);
         return handlerInput.responseBuilder
-            .speak('عذراً، حدث خطأ في معالجة طلبك.')
+            .speak('عذراً، حدث خطأ أثناء معالجة الطلب.')
             .getResponse();
     }
 };
@@ -107,8 +107,11 @@ function callGemini(prompt, apiKey) {
             res.on('end', () => {
                 try {
                     const response = JSON.parse(body);
-                    const text = response.candidates[0].content.parts[0].text;
-                    resolve(text);
+                    if (response.candidates && response.candidates[0].content.parts[0].text) {
+                        resolve(response.candidates[0].content.parts[0].text);
+                    } else {
+                        resolve('لم أتمكن من الحصول على إجابة من جيميناي.');
+                    }
                 } catch (e) {
                     reject(e);
                 }
@@ -133,6 +136,7 @@ const skill = Alexa.SkillBuilders.custom()
 
 const adapter = new ExpressAdapter(skill, true, true);
 
+app.use(express.json());
 app.post('/alexa', adapter.getRequestHandler());
 
 const PORT = process.env.PORT || 10000;
