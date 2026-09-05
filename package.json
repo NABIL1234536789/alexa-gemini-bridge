@@ -1,7 +1,7 @@
 {
   "name": "alexa-gemini-bridge",
   "version": "1.0.0",
-  "description": "Direct Alexa Skill Bridge for Gemini API",
+  "description": "Alexa Skill Bridge for Gemini API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
