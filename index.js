@@ -5,16 +5,25 @@ app.use(express.json());
 
 app.post('/alexa', async (req, res) => {
     try {
-        const requestType = req.body?.request?.type;
+        // قراءة نوع الطلب سواء كان حدث نظام أو Intent أو Launch
+        const requestType = req.body?.request?.type || req.body?.event?.header?.name;
         const intentName = req.body?.request?.intent?.name;
+
+        // 1. التعامل مع طلبات النظام الداخلية للمجهزة (مثل SynchronizeState)
+        if (req.body?.event?.header?.namespace === 'System') {
+            return res.json({
+                version: '1.0',
+                response: {}
+            });
+        }
 
         let speakOutput = '';
 
-        // 1. معالجة فتح المهارة (LaunchRequest)
+        // 2. معالجة فتح المهارة (LaunchRequest)
         if (requestType === 'LaunchRequest') {
             speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
         } 
-        // 2. معالجة طلب الأسئلة (AskGeminiIntent)
+        // 3. معالجة الأسئلة عبر AskGeminiIntent
         else if (requestType === 'IntentRequest' && intentName === 'AskGeminiIntent') {
             const slots = req.body?.request?.intent?.slots;
             const query = slots?.query?.value;
@@ -43,16 +52,15 @@ app.post('/alexa', async (req, res) => {
                 }
             }
         } 
-        // 3. معالجة الخروج أو الإيقاف
+        // 4. معالجة الإيقاف والخروج
         else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
             speakOutput = 'مع السلامة!';
         } 
-        // 4. معالجة أي استدعاء آخر
+        // 5. الرد الافتراضي لباقي الحالات
         else {
-            speakOutput = 'أهلاً بك، يمكنك سؤالي بالقول: اسأل جيميناي متبوعاً بسؤالك.';
+            speakOutput = 'أهلاً بك، يمكنك سؤالي بالقول: اسأل مساعد جيميناي متبوعاً بسؤالك.';
         }
 
-        // إرجاع هيكل الاستجابة القياسي المعتمد من أليكسا
         return res.json({
             version: '1.0',
             response: {
@@ -65,7 +73,7 @@ app.post('/alexa', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Express Handler Error:', error);
+        console.error('Express Error:', error);
         return res.json({
             version: '1.0',
             response: {
