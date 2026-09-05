@@ -5,11 +5,7 @@ app.use(express.json());
 
 app.post('/alexa', async (req, res) => {
     try {
-        // قراءة نوع الطلب سواء كان حدث نظام أو Intent أو Launch
-        const requestType = req.body?.request?.type || req.body?.event?.header?.name;
-        const intentName = req.body?.request?.intent?.name;
-
-        // 1. التعامل مع طلبات النظام الداخلية للمجهزة (مثل SynchronizeState)
+        // معالجة طلبات مزامنة النظام (System/AVS) حتى لا ينهار السيرفر
         if (req.body?.event?.header?.namespace === 'System') {
             return res.json({
                 version: '1.0',
@@ -17,13 +13,16 @@ app.post('/alexa', async (req, res) => {
             });
         }
 
+        const requestType = req.body?.request?.type;
+        const intentName = req.body?.request?.intent?.name;
+
         let speakOutput = '';
 
-        // 2. معالجة فتح المهارة (LaunchRequest)
+        // 1. عند تشغيل المهارة بأمر "افتح مساعد جيميناي"
         if (requestType === 'LaunchRequest') {
             speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
         } 
-        // 3. معالجة الأسئلة عبر AskGeminiIntent
+        // 2. عند طرح سؤال عبر AskGeminiIntent
         else if (requestType === 'IntentRequest' && intentName === 'AskGeminiIntent') {
             const slots = req.body?.request?.intent?.slots;
             const query = slots?.query?.value;
@@ -52,11 +51,11 @@ app.post('/alexa', async (req, res) => {
                 }
             }
         } 
-        // 4. معالجة الإيقاف والخروج
+        // 3. عند الإيقاف أو الخروج
         else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
             speakOutput = 'مع السلامة!';
         } 
-        // 5. الرد الافتراضي لباقي الحالات
+        // 4. الاستجابة الافتراضية
         else {
             speakOutput = 'أهلاً بك، يمكنك سؤالي بالقول: اسأل مساعد جيميناي متبوعاً بسؤالك.';
         }
