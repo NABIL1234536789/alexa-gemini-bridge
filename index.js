@@ -5,7 +5,19 @@ app.use(express.json());
 
 app.post('/alexa', async (req, res) => {
     try {
-        // معالجة طلبات مزامنة النظام (System/AVS) حتى لا ينهار السيرفر
+        const requestType = req.body?.request?.type;
+        const intentName = req.body?.request?.intent?.name;
+
+        // 1. معالجة إغلاق الجلسة أو أخطاء أليكسا حتى لا ينهار السيرفر
+        if (requestType === 'SessionEndedRequest') {
+            console.log('Session ended reason:', req.body?.request?.reason);
+            return res.json({
+                version: '1.0',
+                response: {}
+            });
+        }
+
+        // 2. معالجة طلبات النظام
         if (req.body?.event?.header?.namespace === 'System') {
             return res.json({
                 version: '1.0',
@@ -13,16 +25,13 @@ app.post('/alexa', async (req, res) => {
             });
         }
 
-        const requestType = req.body?.request?.type;
-        const intentName = req.body?.request?.intent?.name;
-
         let speakOutput = '';
 
-        // 1. عند تشغيل المهارة بأمر "افتح مساعد جيميناي"
+        // 3. عند فتح المهارة (LaunchRequest)
         if (requestType === 'LaunchRequest') {
             speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
         } 
-        // 2. عند طرح سؤال عبر AskGeminiIntent
+        // 4. عند طرح سؤال (AskGeminiIntent)
         else if (requestType === 'IntentRequest' && intentName === 'AskGeminiIntent') {
             const slots = req.body?.request?.intent?.slots;
             const query = slots?.query?.value;
@@ -51,11 +60,11 @@ app.post('/alexa', async (req, res) => {
                 }
             }
         } 
-        // 3. عند الإيقاف أو الخروج
+        // 5. الإيقاف والخروج
         else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
             speakOutput = 'مع السلامة!';
         } 
-        // 4. الاستجابة الافتراضية
+        // 6. الحالات الأخرى
         else {
             speakOutput = 'أهلاً بك، يمكنك سؤالي بالقول: اسأل مساعد جيميناي متبوعاً بسؤالك.';
         }
@@ -78,7 +87,7 @@ app.post('/alexa', async (req, res) => {
             response: {
                 outputSpeech: {
                     type: 'SSML',
-                    ssml: '<speak>حدث خطأ أثناء معالجة الطلب، يرجى المحاولة لاحقاً.</speak>'
+                    ssml: '<speak>حدث خطأ أثناء معالجة الطلب.</speak>'
                 },
                 shouldEndSession: true
             }
