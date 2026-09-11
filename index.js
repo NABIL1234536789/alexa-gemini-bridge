@@ -1,4 +1,5 @@
 const express = require('express');
+const fetch = require('node-fetch');
 const app = express();
 
 app.use(express.json());
@@ -45,39 +46,44 @@ app.post('/alexa', async (req, res) => {
             } else {
                 const apiKey = process.env.GEMINI_API_KEY;
                 if (!apiKey) {
-                    speakOutput = 'مفتاح API الخاص بجيميناي غير معرف في السيرفر.';
+                    speakOutput = 'مفتاح API الخاص بجيميناي غير معرف في متغيرات البيئة على Render.';
                 } else {
                     try {
-                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                        const response = await fetch(url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 contents: [
                                     {
-                                        parts: [{ text: `أجب باختصار ومناسبة للحديث الصوتي: ${query}` }]
+                                        parts: [{ text: `أجب باختصار باللغة العربية: ${query}` }]
                                     }
                                 ]
                             })
                         });
 
                         const data = await response.json();
-                        
+
                         if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
                             speakOutput = data.candidates[0].content.parts[0].text
                                 .replace(/[*_#`~]/g, '')
-                                .replace(/\n/g, ' ');
+                                .replace(/\n/g, ' ')
+                                .trim();
+                        } else if (data?.error?.message) {
+                            console.error('Gemini API Error:', data.error);
+                            speakOutput = `خطأ من جيميناي: ${data.error.message}`;
                         } else {
-                            console.error('Gemini API Error Response:', JSON.stringify(data));
-                            speakOutput = 'لم أتمكن من الحصول على إجابة، يرجى المحاولة مرة أخرى.';
+                            console.error('Unexpected Response:', JSON.stringify(data));
+                            speakOutput = 'لم يتوفر رد مناسب من جيميناي حالياً.';
                         }
                     } catch (apiError) {
-                        console.error('Fetch Error:', apiError);
-                        speakOutput = 'حدث خطأ أثناء الاتصال بجيميناي.';
+                        console.error('Fetch Exception:', apiError);
+                        speakOutput = 'حدث خطأ أثناء الاتصال بالخادم.';
                     }
                 }
             }
         } else {
-            speakOutput = 'كيف يمكنني مساعدتك اليوم؟';
+            speakOutput = 'كيف يمكنني مساعدتك؟';
             shouldEnd = false;
         }
 
@@ -94,7 +100,7 @@ app.post('/alexa', async (req, res) => {
         return res.json({
             version: '1.0',
             response: {
-                outputSpeech: { type: 'SSML', ssml: '<speak>حدث خطأ غير متوقع.</speak>' },
+                outputSpeech: { type: 'SSML', ssml: '<speak>حدث خطأ في معالجة النظام.</speak>' },
                 shouldEndSession: true
             }
         });
