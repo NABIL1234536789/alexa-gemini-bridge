@@ -6,49 +6,51 @@ app.use(express.json());
 app.post('/alexa', async (req, res) => {
     try {
         const requestType = req.body?.request?.type;
-        const intentName = req.body?.request?.intent?.name;
+        const intent = req.body?.request?.intent;
 
-        // 1. معالجة إغلاق الجلسة
         if (requestType === 'SessionEndedRequest') {
             return res.json({ version: '1.0', response: {} });
         }
 
-        // 2. معالجة طلبات النظام
         if (req.body?.event?.header?.namespace === 'System') {
             return res.json({ version: '1.0', response: {} });
         }
 
         let speakOutput = '';
-        let shouldEnd = false; // ترك الجلسة مفتوحة لاستقبال الأسئلة دائماً
+        let shouldEnd = false;
 
-        // 3. عند فتح المهارة لأول مرة
+        // 1. عند فتح المهارة
         if (requestType === 'LaunchRequest') {
-            speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
+            speakOutput = 'مرحباً بك! أنا جيميناي، تفضل بطرح سؤالك مباشرة.';
+            shouldEnd = false;
         } 
-        // 4. عند التوقف أو الخروج
-        else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
+        // 2. إيقاف المهارة
+        else if (intent?.name === 'AMAZON.StopIntent' || intent?.name === 'AMAZON.CancelIntent') {
             speakOutput = 'مع السلامة!';
             shouldEnd = true;
         } 
-        // 5. معالجة أي سؤال أو طلب قادم من المستخدم
+        // 3. استقبال أي سؤال (سواء تم التعرف عليه كـ Intent مخصص أو Fallback)
         else if (requestType === 'IntentRequest') {
-            const slots = req.body?.request?.intent?.slots || {};
-            
-            // استخراج السؤال من أي Slot موجود
-            let query = '';
-            for (const key in slots) {
-                if (slots[key]?.value) {
-                    query = slots[key].value;
-                    break;
+            // محاولة جلب النص المدخل
+            let query = intent?.slots?.query?.value;
+
+            // إذا لم يجد query في السلوت، يحاول قراءة الجملة من بقية السلوتس
+            if (!query && intent?.slots) {
+                for (const key in intent.slots) {
+                    if (intent.slots[key]?.value) {
+                        query = intent.slots[key].value;
+                        break;
+                    }
                 }
             }
 
             if (!query) {
-                speakOutput = 'لم أتمكن من سماع سؤالك بوضوح، تفضل بطرح سؤالك مرة أخرى.';
+                speakOutput = 'عذراً، لم أسمع السؤال جيداً. يمكنك قوله مرة أخرى.';
+                shouldEnd = false;
             } else {
                 const apiKey = process.env.GEMINI_API_KEY;
                 if (!apiKey) {
-                    speakOutput = 'مفتاح API الخاص بجيميناي غير معرف في السيرفر.';
+                    speakOutput = 'مفتاح API غير متوفر.';
                 } else {
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
                         method: 'POST',
@@ -60,21 +62,19 @@ app.post('/alexa', async (req, res) => {
                     if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
                         speakOutput = data.candidates[0].content.parts[0].text.replace(/[*_#`~]/g, '');
                     } else {
-                        speakOutput = 'عذراً، لم أتمكن من الحصول على إجابة من جيميناي حالياً.';
+                        speakOutput = 'لم أتمكن من الحصول على إجابة حالياً.';
                     }
                 }
             }
         } else {
-            speakOutput = 'كيف يمكنني مساعدتك؟ يمكنك طرح سؤالك مباشرة.';
+            speakOutput = 'كيف يمكنني مساعدتك؟';
+            shouldEnd = false;
         }
 
         return res.json({
             version: '1.0',
             response: {
-                outputSpeech: {
-                    type: 'SSML',
-                    ssml: `<speak>${speakOutput}</speak>`
-                },
+                outputSpeech: { type: 'SSML', ssml: `<speak>${speakOutput}</speak>` },
                 shouldEndSession: shouldEnd
             }
         });
@@ -84,7 +84,7 @@ app.post('/alexa', async (req, res) => {
         return res.json({
             version: '1.0',
             response: {
-                outputSpeech: { type: 'SSML', ssml: '<speak>حدث خطأ أثناء معالجة الطلب.</speak>' },
+                outputSpeech: { type: 'SSML', ssml: '<speak>حدث خطأ في النظام.</speak>' },
                 shouldEndSession: true
             }
         });
