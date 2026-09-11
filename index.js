@@ -73,7 +73,6 @@ app.post('/alexa', async (req, res) => {
                             console.error('Gemini API Error:', data.error);
                             speakOutput = `خطأ من جيميناي: ${data.error.message}`;
                         } else {
-                            console.error('Unexpected Response:', JSON.stringify(data));
                             speakOutput = 'لم يتوفر رد مناسب من جيميناي حالياً.';
                         }
                     } catch (apiError) {
