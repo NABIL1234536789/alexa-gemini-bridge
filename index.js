@@ -8,30 +8,24 @@ app.post('/alexa', async (req, res) => {
         const requestType = req.body?.request?.type;
         const intentName = req.body?.request?.intent?.name;
 
-        // 1. معالجة إغلاق الجلسة أو أخطاء أليكسا حتى لا ينهار السيرفر
+        // معالجة إغلاق الجلسة
         if (requestType === 'SessionEndedRequest') {
-            console.log('Session ended reason:', req.body?.request?.reason);
-            return res.json({
-                version: '1.0',
-                response: {}
-            });
+            console.log('Session ended:', req.body?.request?.reason);
+            return res.json({ version: '1.0', response: {} });
         }
 
-        // 2. معالجة طلبات النظام
+        // معالجة طلبات النظام
         if (req.body?.event?.header?.namespace === 'System') {
-            return res.json({
-                version: '1.0',
-                response: {}
-            });
+            return res.json({ version: '1.0', response: {} });
         }
 
         let speakOutput = '';
 
-        // 3. عند فتح المهارة (LaunchRequest)
+        // 1. عند فتح المهارة (افتح مساعد جيميناي)
         if (requestType === 'LaunchRequest') {
             speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
         } 
-        // 4. عند طرح سؤال (AskGeminiIntent)
+        // 2. عند طرح سؤال (AskGeminiIntent)
         else if (requestType === 'IntentRequest' && intentName === 'AskGeminiIntent') {
             const slots = req.body?.request?.intent?.slots;
             const query = slots?.query?.value;
@@ -60,13 +54,13 @@ app.post('/alexa', async (req, res) => {
                 }
             }
         } 
-        // 5. الإيقاف والخروج
+        // 3. عند الإيقاف
         else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
             speakOutput = 'مع السلامة!';
         } 
-        // 6. الحالات الأخرى
+        // 4. الحالات الأخرى
         else {
-            speakOutput = 'أهلاً بك، يمكنك سؤالي بالقول: اسأل مساعد جيميناي متبوعاً بسؤالك.';
+            speakOutput = 'أهلاً بك، يمكنك سؤالي مباشرة بعد فتح المهارة.';
         }
 
         return res.json({
