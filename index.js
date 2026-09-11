@@ -8,34 +8,47 @@ app.post('/alexa', async (req, res) => {
         const requestType = req.body?.request?.type;
         const intentName = req.body?.request?.intent?.name;
 
+        // 1. معالجة إغلاق الجلسة
         if (requestType === 'SessionEndedRequest') {
             return res.json({ version: '1.0', response: {} });
         }
 
+        // 2. معالجة طلبات النظام
         if (req.body?.event?.header?.namespace === 'System') {
             return res.json({ version: '1.0', response: {} });
         }
 
         let speakOutput = '';
-        let shouldEnd = true; // إنهاء الجلسة افتراضياً بعد الإجابة
+        let shouldEnd = false; // ترك الجلسة مفتوحة لاستقبال الأسئلة دائماً
 
-        // 1. عند إطلاق المهارة
+        // 3. عند فتح المهارة لأول مرة
         if (requestType === 'LaunchRequest') {
             speakOutput = 'مرحباً بك! أنا جيميناي، كيف يمكنني مساعدتك اليوم؟';
-            shouldEnd = false; // ترك الجلسة مفتوحة لاستقبال السؤال فوراً
         } 
-        // 2. عند معالجة السؤال
-        else if (requestType === 'IntentRequest' && intentName === 'AskGeminiIntent') {
-            const slots = req.body?.request?.intent?.slots;
-            const query = slots?.query?.value;
+        // 4. عند التوقف أو الخروج
+        else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
+            speakOutput = 'مع السلامة!';
+            shouldEnd = true;
+        } 
+        // 5. معالجة أي سؤال أو طلب قادم من المستخدم
+        else if (requestType === 'IntentRequest') {
+            const slots = req.body?.request?.intent?.slots || {};
+            
+            // استخراج السؤال من أي Slot موجود
+            let query = '';
+            for (const key in slots) {
+                if (slots[key]?.value) {
+                    query = slots[key].value;
+                    break;
+                }
+            }
 
             if (!query) {
-                speakOutput = 'لم أتمكن من سماع سؤالك، يرجى إعادة المحاولة.';
-                shouldEnd = false;
+                speakOutput = 'لم أتمكن من سماع سؤالك بوضوح، تفضل بطرح سؤالك مرة أخرى.';
             } else {
                 const apiKey = process.env.GEMINI_API_KEY;
                 if (!apiKey) {
-                    speakOutput = 'مفتاح API الخاص بجيميناي غير معرف.';
+                    speakOutput = 'مفتاح API الخاص بجيميناي غير معرف في السيرفر.';
                 } else {
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
                         method: 'POST',
@@ -47,18 +60,12 @@ app.post('/alexa', async (req, res) => {
                     if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
                         speakOutput = data.candidates[0].content.parts[0].text.replace(/[*_#`~]/g, '');
                     } else {
-                        speakOutput = 'عذراً، لم أتمكن من الحصول على إجابة حالياً.';
+                        speakOutput = 'عذراً، لم أتمكن من الحصول على إجابة من جيميناي حالياً.';
                     }
                 }
             }
-        } 
-        else if (intentName === 'AMAZON.StopIntent' || intentName === 'AMAZON.CancelIntent') {
-            speakOutput = 'مع السلامة!';
-            shouldEnd = true;
-        } 
-        else {
-            speakOutput = 'يرجى قول: اسأل جيميناي متبوعاً بسؤالك.';
-            shouldEnd = false;
+        } else {
+            speakOutput = 'كيف يمكنني مساعدتك؟ يمكنك طرح سؤالك مباشرة.';
         }
 
         return res.json({
