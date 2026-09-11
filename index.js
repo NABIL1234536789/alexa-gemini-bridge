@@ -19,21 +19,17 @@ app.post('/alexa', async (req, res) => {
         let speakOutput = '';
         let shouldEnd = false;
 
-        // 1. عند فتح المهارة
         if (requestType === 'LaunchRequest') {
             speakOutput = 'مرحباً بك! أنا جيميناي، تفضل بطرح سؤالك.';
             shouldEnd = false;
         } 
-        // 2. عند الإيقاف
         else if (intent?.name === 'AMAZON.StopIntent' || intent?.name === 'AMAZON.CancelIntent') {
             speakOutput = 'مع السلامة!';
             shouldEnd = true;
         } 
-        // 3. معالجة الأسئلة
         else if (requestType === 'IntentRequest') {
             let query = intent?.slots?.query?.value;
 
-            // البحث في جميع السلوتس المتاحة إن لم يجد query
             if (!query && intent?.slots) {
                 for (const key in intent.slots) {
                     if (intent.slots[key]?.value) {
@@ -44,24 +40,39 @@ app.post('/alexa', async (req, res) => {
             }
 
             if (!query) {
-                speakOutput = 'عذراً، لم أسمع سؤالك جيداً. يرجى قول: اسأل متبوعاً بسؤالك.';
+                speakOutput = 'عذراً، لم أسمع سؤالك جيداً. تفضل بإعادة طرح السؤال.';
                 shouldEnd = false;
             } else {
                 const apiKey = process.env.GEMINI_API_KEY;
                 if (!apiKey) {
                     speakOutput = 'مفتاح API الخاص بجيميناي غير معرف في السيرفر.';
                 } else {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: query }] }] })
-                    });
+                    try {
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [
+                                    {
+                                        parts: [{ text: `أجب باختصار ومناسبة للحديث الصوتي: ${query}` }]
+                                    }
+                                ]
+                            })
+                        });
 
-                    const data = await response.json();
-                    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                        speakOutput = data.candidates[0].content.parts[0].text.replace(/[*_#`~]/g, '');
-                    } else {
-                        speakOutput = 'عذراً، لم أتمكن من الحصول على إجابة حالياً.';
+                        const data = await response.json();
+                        
+                        if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                            speakOutput = data.candidates[0].content.parts[0].text
+                                .replace(/[*_#`~]/g, '')
+                                .replace(/\n/g, ' ');
+                        } else {
+                            console.error('Gemini API Error Response:', JSON.stringify(data));
+                            speakOutput = 'لم أتمكن من الحصول على إجابة، يرجى المحاولة مرة أخرى.';
+                        }
+                    } catch (apiError) {
+                        console.error('Fetch Error:', apiError);
+                        speakOutput = 'حدث خطأ أثناء الاتصال بجيميناي.';
                     }
                 }
             }
@@ -79,11 +90,11 @@ app.post('/alexa', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('General Error:', error);
         return res.json({
             version: '1.0',
             response: {
-                outputSpeech: { type: 'SSML', ssml: '<speak>حدث خطأ أثناء معالجة الطلب.</speak>' },
+                outputSpeech: { type: 'SSML', ssml: '<speak>حدث خطأ غير متوقع.</speak>' },
                 shouldEndSession: true
             }
         });
